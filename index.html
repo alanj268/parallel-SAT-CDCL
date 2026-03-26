@@ -1,0 +1,532 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Parallel CDCL SAT Solver – 15-418 Project Proposal</title>
+  <style>
+    :root {
+      --primary: #c41230;
+      --accent: #4a90d9;
+      --bg: #f8f9fa;
+      --card-bg: #ffffff;
+      --text: #1a1a1a;
+      --muted: #555;
+      --border: #dee2e6;
+      --radius: 8px;
+    }
+
+    * {
+      box-sizing: border-box;
+      margin: 0;
+      padding: 0;
+    }
+
+    body {
+      font-family: "Segoe UI", Arial, sans-serif;
+      background: var(--bg);
+      color: var(--text);
+      line-height: 1.7;
+    }
+
+    header {
+      background: var(--primary);
+      color: #fff;
+      padding: 2.5rem 1.5rem 2rem;
+      text-align: center;
+    }
+
+    header h1 {
+      font-size: 2rem;
+      margin-bottom: 0.4rem;
+    }
+
+    header p.subtitle {
+      font-size: 1.05rem;
+      opacity: 0.9;
+    }
+
+    header p.course {
+      font-size: 0.9rem;
+      opacity: 0.75;
+      margin-top: 0.3rem;
+    }
+
+    main {
+      max-width: 900px;
+      margin: 2rem auto;
+      padding: 0 1.25rem 3rem;
+    }
+
+    section {
+      background: var(--card-bg);
+      border: 1px solid var(--border);
+      border-radius: var(--radius);
+      padding: 1.75rem 2rem;
+      margin-bottom: 1.75rem;
+    }
+
+    h2 {
+      color: var(--primary);
+      font-size: 1.25rem;
+      text-transform: uppercase;
+      letter-spacing: 0.05em;
+      border-bottom: 2px solid var(--primary);
+      padding-bottom: 0.4rem;
+      margin-bottom: 1rem;
+    }
+
+    p {
+      margin-bottom: 0.85rem;
+    }
+
+    p:last-child {
+      margin-bottom: 0;
+    }
+
+    ul, ol {
+      margin: 0.5rem 0 0.85rem 1.4rem;
+    }
+
+    li {
+      margin-bottom: 0.4rem;
+    }
+
+    a {
+      color: var(--accent);
+      word-break: break-all;
+    }
+
+    code {
+      background: #f0f0f0;
+      border-radius: 4px;
+      padding: 0.1em 0.4em;
+      font-size: 0.92em;
+    }
+
+    pre {
+      background: #1e1e1e;
+      color: #d4d4d4;
+      border-radius: var(--radius);
+      padding: 1.1rem 1.25rem;
+      overflow-x: auto;
+      font-size: 0.88rem;
+      margin: 0.75rem 0 0.85rem;
+    }
+
+    table {
+      width: 100%;
+      border-collapse: collapse;
+      margin-top: 0.5rem;
+      font-size: 0.95rem;
+    }
+
+    th {
+      background: var(--primary);
+      color: #fff;
+      padding: 0.55rem 0.8rem;
+      text-align: left;
+    }
+
+    td {
+      padding: 0.55rem 0.8rem;
+      border-bottom: 1px solid var(--border);
+      vertical-align: top;
+    }
+
+    tr:last-child td {
+      border-bottom: none;
+    }
+
+    tr:nth-child(even) td {
+      background: #fafafa;
+    }
+
+    .milestone {
+      font-weight: 600;
+      color: var(--primary);
+    }
+
+    footer {
+      text-align: center;
+      font-size: 0.85rem;
+      color: var(--muted);
+      padding: 1.5rem 1rem 2rem;
+    }
+  </style>
+</head>
+<body>
+
+<header>
+  <h1>Parallel Conflict-Driven Clause Learning (CDCL) SAT Solver</h1>
+  <p class="subtitle">Alan Joseph (alanjose) &nbsp;&amp;&nbsp; Om Arora (oarora)</p>
+  <p class="course">15-418: Parallel Computer Architecture and Programming &mdash; Carnegie Mellon University, Spring 2026</p>
+</header>
+
+<main>
+
+  <!-- URL -->
+  <section id="url">
+    <h2>Project URL</h2>
+    <p>
+      <a href="https://alanj268.github.io/parallel-SAT-CDCL/" target="_blank" rel="noopener">
+        https://alanj268.github.io/parallel-SAT-CDCL/
+      </a>
+    </p>
+  </section>
+
+  <!-- SUMMARY -->
+  <section id="summary">
+    <h2>Summary</h2>
+    <p>
+      We are implementing a high-performance <strong>parallel Boolean Satisfiability (SAT) solver</strong>
+      based on the Conflict-Driven Clause Learning (CDCL) algorithm. Our goal is to exploit
+      shared-memory multi-core parallelism (and optionally MPI for distributed memory) by
+      simultaneously exploring multiple branches of the decision tree with independent worker
+      threads, while using an efficient inter-thread clause-sharing protocol so that useful
+      learned clauses discovered by one worker immediately prune the search spaces of all others.
+      We will evaluate correctness and scalability against standard SAT-competition benchmarks,
+      comparing parallel speedup relative to a sequential CDCL baseline.
+    </p>
+  </section>
+
+  <!-- BACKGROUND -->
+  <section id="background">
+    <h2>Background</h2>
+    <p>
+      The Boolean Satisfiability problem (SAT) asks: given a propositional formula in Conjunctive
+      Normal Form (CNF), does there exist an assignment of truth values to its variables that
+      satisfies every clause? SAT is NP-complete, yet modern CDCL solvers routinely handle
+      industrial instances with millions of variables due to powerful heuristics and the power
+      of <em>clause learning</em>.
+    </p>
+    <p>
+      The CDCL algorithm works as follows:
+    </p>
+    <pre>
+function CDCL(formula):
+    while true:
+        propagate()            // unit propagation (BCP)
+        if conflict detected:
+            if decision level == 0: return UNSAT
+            clause = analyze_conflict()   // 1-UIP cut, resolution
+            learn(clause)                 // add to clause DB
+            backjump(clause)             // non-chronological backtracking
+        else if all variables assigned:
+            return SAT
+        else:
+            decide()           // pick unassigned variable (VSIDS heuristic)
+    </pre>
+    <p>
+      Two phases lend themselves naturally to parallelism:
+    </p>
+    <ul>
+      <li>
+        <strong>Parallel Search (Portfolio):</strong> Multiple independent solver instances
+        ("workers") each maintain their own variable assignment, decision stack, and clause
+        database. Each worker uses a slightly different decision heuristic or random seed so
+        that they explore different regions of the search space. The first worker to find SAT
+        (or all workers to find UNSAT) terminates the overall solve.
+      </li>
+      <li>
+        <strong>Clause Sharing:</strong> When a worker learns a new clause during conflict
+        analysis, that clause can be broadcast to sibling workers. Receiving a short,
+        high-quality clause allows a worker to immediately eliminate branches it has not
+        yet explored, effectively multiplying the pruning power of the entire portfolio.
+      </li>
+    </ul>
+    <p>
+      The clause sharing protocol is the key integration point: workers must be able to
+      publish and consume clauses with minimal synchronization overhead so that the
+      communication cost never becomes the bottleneck.
+    </p>
+  </section>
+
+  <!-- THE CHALLENGE -->
+  <section id="challenge">
+    <h2>The Challenge</h2>
+    <p>
+      Parallelizing CDCL is non-trivial for several interrelated reasons:
+    </p>
+    <ul>
+      <li>
+        <strong>Irregular, data-dependent workload:</strong> The depth and shape of the
+        CDCL search tree depends entirely on the input formula and the order in which
+        conflicts are encountered. There is no way to predict in advance how much work
+        each branch requires, making static load balancing ineffective.
+      </li>
+      <li>
+        <strong>High communication-to-computation ratio risk:</strong> Naïvely broadcasting
+        every learned clause would flood workers with low-quality clauses, causing them to
+        spend more time filtering and integrating new clauses than actually searching. We
+        must implement quality-based filtering (e.g., clause length thresholds, LBD score)
+        and rate-limiting to keep communication overhead low.
+      </li>
+      <li>
+        <strong>Shared clause database contention:</strong> Shared-memory clause sharing
+        requires lock-free or low-contention data structures (e.g., concurrent ring buffers
+        or epoch-based queues). Fine-grained locking around the clause database can
+        serialize workers and eliminate parallelism gains.
+      </li>
+      <li>
+        <strong>Divergent execution:</strong> Different workers will encounter conflicts at
+        entirely different points in their search. This leads to divergent memory access
+        patterns that are difficult to predict or prefetch. Cache efficiency per worker is
+        poor compared to sequential solvers.
+      </li>
+      <li>
+        <strong>Correctness under concurrent clause learning:</strong> A clause added by
+        one worker must be validated against another worker's current variable assignment
+        before being used for propagation. Ensuring consistent state without sacrificing
+        performance requires careful design.
+      </li>
+    </ul>
+    <p>
+      Through this project we hope to learn how the portfolio approach scales with core
+      count, what clause-quality metrics best predict cross-worker pruning value, and
+      whether a shared-memory approach outperforms a message-passing (MPI) approach at
+      various problem sizes.
+    </p>
+  </section>
+
+  <!-- RESOURCES -->
+  <section id="resources">
+    <h2>Resources</h2>
+    <p>We will use the following resources:</p>
+    <ul>
+      <li>
+        <strong>Compute:</strong> CMU GHC cluster machines (multi-core x86-64, up to 8
+        hardware threads per node) for shared-memory experiments; PSC Bridges-2 nodes for
+        optional MPI scaling experiments.
+      </li>
+      <li>
+        <strong>Starting code:</strong> We will implement the sequential CDCL baseline from
+        scratch in C++ to ensure complete understanding of every component before
+        parallelizing. Reference pseudocode is drawn from the MiniSat and Glucose solver
+        papers.
+      </li>
+      <li>
+        <strong>Primary references:</strong>
+        <ul>
+          <li>
+            Marques-Silva, J. P. &amp; Sakallah, K. A. (1999). GRASP: A search algorithm
+            for propositional satisfiability. <em>IEEE Transactions on Computers, 48</em>(5),
+            506–521.
+          </li>
+          <li>
+            Eén, N. &amp; Sörensson, N. (2003). An extensible SAT-solver.
+            <em>Lecture Notes in Computer Science (SAT 2003)</em>, 502–518.
+            (MiniSat paper)
+          </li>
+          <li>
+            Audemard, G. &amp; Simon, L. (2009). Predicting learnt clauses quality in modern
+            SAT solvers. <em>Proceedings of IJCAI 2009</em>, 399–404.
+            (Glucose / LBD metric)
+          </li>
+          <li>
+            Hamadi, Y., Jabbour, S., &amp; Sais, L. (2009). ManySAT: a parallel SAT solver.
+            <em>Journal on Satisfiability, Boolean Modeling and Computation, 6</em>, 245–262.
+          </li>
+        </ul>
+      </li>
+      <li>
+        <strong>Benchmark suite:</strong> SAT Competition 2023/2024 benchmark instances
+        (application and crafted categories) available at
+        <a href="https://satcompetition.github.io/" target="_blank" rel="noopener">satcompetition.github.io</a>.
+      </li>
+      <li>
+        <strong>Languages / libraries:</strong> C++17 with <code>std::thread</code> /
+        <code>std::atomic</code> for shared-memory parallelism; optionally OpenMPI for
+        distributed experiments.
+      </li>
+    </ul>
+  </section>
+
+  <!-- GOALS AND DELIVERABLES -->
+  <section id="goals">
+    <h2>Goals and Deliverables</h2>
+
+    <h3 style="margin:0.75rem 0 0.4rem; color:#333;">Plan to Achieve</h3>
+    <ul>
+      <li>
+        A fully correct sequential CDCL solver with VSIDS decision heuristics, 1-UIP clause
+        learning, non-chronological backtracking, and restarts.
+      </li>
+      <li>
+        A parallel portfolio solver with <em>N</em> worker threads (targeting <em>N</em> = 2, 4, 8)
+        using shared-memory C++ threading (<code>std::thread</code>).
+      </li>
+      <li>
+        A basic clause-sharing protocol using a lock-free ring buffer; workers filter
+        shared clauses by length (≤ 8 literals) before accepting them.
+      </li>
+      <li>
+        Demonstrated correctness on at least 50 SAT Competition benchmark instances
+        across both SAT and UNSAT categories.
+      </li>
+      <li>
+        A scalability analysis showing speedup vs. thread count on a representative
+        benchmark set, with a goal of achieving <strong>≥ 4× speedup</strong> on 8 cores
+        for hard industrial instances (justified by ManySAT results showing super-linear
+        speedups on some instances due to collaborative pruning).
+      </li>
+    </ul>
+
+    <h3 style="margin:0.75rem 0 0.4rem; color:#333;">Hope to Achieve</h3>
+    <ul>
+      <li>
+        LBD (Literal Block Distance) based clause quality filtering to further reduce
+        communication overhead and improve clause sharing utility.
+      </li>
+      <li>
+        Adaptive restart policies that differ per worker (e.g., Luby vs. geometric) to
+        diversify search and reduce redundant work.
+      </li>
+      <li>
+        An MPI-based distributed variant allowing scaling across multiple GHC nodes,
+        comparing performance with the shared-memory baseline.
+      </li>
+      <li>
+        A thorough parameter study of clause-sharing thresholds and their effect on
+        solve time for different benchmark families.
+      </li>
+    </ul>
+
+    <h3 style="margin:0.75rem 0 0.4rem; color:#333;">Fallback Goals (if work goes slowly)</h3>
+    <ul>
+      <li>
+        A correct parallel solver using a simple, coarse-grained locking scheme (even if
+        performance is suboptimal) that still demonstrates speedup on easy benchmarks.
+      </li>
+      <li>
+        A detailed performance analysis of the sequential solver bottlenecks (profiling
+        BCP, conflict analysis, and clause database management) as a foundation for future
+        parallelization work.
+      </li>
+    </ul>
+  </section>
+
+  <!-- PLATFORM CHOICE -->
+  <section id="platform">
+    <h2>Platform Choice</h2>
+    <p>
+      We chose <strong>C++17 on shared-memory multi-core x86-64 hardware</strong> (GHC cluster)
+      for the following reasons:
+    </p>
+    <ul>
+      <li>
+        <strong>Performance-critical inner loops:</strong> CDCL's unit propagation loop
+        (BCP) is extremely tight and cache-sensitive. C++ gives us the low-level control
+        over memory layout (watched-literal arrays, 2-literal watching scheme) required to
+        keep this loop fast.
+      </li>
+      <li>
+        <strong>Rich threading primitives:</strong> C++17's <code>std::thread</code>,
+        <code>std::atomic</code>, and <code>std::mutex</code> provide the building blocks
+        for low-overhead shared-memory parallelism without requiring external frameworks.
+      </li>
+      <li>
+        <strong>Shared address space for clause sharing:</strong> Portfolio parallelism
+        benefits most from a shared address space because workers can read a newly learned
+        clause from a shared buffer without copying it, keeping communication latency very
+        low. A distributed-memory GPU approach would require serializing/deserializing
+        clauses across PCIe, which is less suitable for this irregular workload.
+      </li>
+      <li>
+        <strong>Alignment with existing SAT solver ecosystem:</strong> The most impactful
+        industrial SAT solvers (MiniSat, Glucose, CaDiCaL, ManySAT) are written in C++.
+        Our implementation choices are therefore directly comparable to the state of the art.
+      </li>
+    </ul>
+  </section>
+
+  <!-- SCHEDULE -->
+  <section id="schedule">
+    <h2>Schedule</h2>
+    <table>
+      <thead>
+        <tr>
+          <th>Week</th>
+          <th>Dates</th>
+          <th>Goals</th>
+        </tr>
+      </thead>
+      <tbody>
+        <tr>
+          <td>1</td>
+          <td>Mar 27 – Apr 2</td>
+          <td>
+            Set up project repository and build system (CMake). Implement DIMACS CNF parser.
+            Implement basic DPLL as a sanity check. Begin sequential CDCL: unit propagation
+            with 2-watched literals, decision stack, basic backtracking.
+          </td>
+        </tr>
+        <tr>
+          <td>2</td>
+          <td>Apr 3 – Apr 9</td>
+          <td>
+            Complete sequential CDCL: 1-UIP conflict analysis and clause learning,
+            non-chronological backtracking, VSIDS decision heuristic, Luby restarts.
+            Validate correctness against a reference solver (e.g., MiniSat) on 20+
+            benchmark instances.
+          </td>
+        </tr>
+        <tr>
+          <td>3</td>
+          <td>Apr 10 – Apr 14</td>
+          <td>
+            Profile sequential solver to identify bottlenecks (BCP vs. conflict analysis
+            vs. clause DB). Design parallel worker architecture (independent clause DBs,
+            shared formula). Implement basic <em>N</em>-thread portfolio launcher
+            (no clause sharing yet). <span class="milestone">🏁 Milestone Report Due: Apr 14</span>
+          </td>
+        </tr>
+        <tr>
+          <td>4</td>
+          <td>Apr 15 – Apr 20</td>
+          <td>
+            Implement lock-free ring buffer for inter-worker clause sharing.
+            Integrate basic clause-sharing protocol (broadcast clauses with ≤ 8 literals).
+            Benchmark parallel solver (2, 4, 8 threads) on a small benchmark set;
+            confirm speedup over sequential baseline.
+          </td>
+        </tr>
+        <tr>
+          <td>5</td>
+          <td>Apr 21 – Apr 25</td>
+          <td>
+            Add LBD-based clause quality filtering. Implement per-worker diversification
+            (different random seeds, restart policies). Expand benchmark suite to 50+
+            instances. Measure and analyze scalability; tune sharing parameters.
+            Fix any correctness issues found under concurrency.
+          </td>
+        </tr>
+        <tr>
+          <td>6</td>
+          <td>Apr 26 – Apr 30</td>
+          <td>
+            (If ahead) MPI variant or adaptive parameter tuning. Write final report:
+            methodology, results, analysis of speedup and communication overhead.
+            Prepare poster. <span class="milestone">🏁 Final Report Due: Apr 30</span>
+          </td>
+        </tr>
+        <tr>
+          <td>Poster</td>
+          <td>May 1</td>
+          <td>
+            <span class="milestone">🎓 15-418 Poster Session: May 1, 8:30–11:30 am</span>
+          </td>
+        </tr>
+      </tbody>
+    </table>
+  </section>
+
+</main>
+
+<footer>
+  <p>15-418 Final Project &mdash; Carnegie Mellon University, Spring 2026</p>
+  <p>Alan Joseph (alanjose) &amp; Om Arora (oarora)</p>
+</footer>
+
+</body>
+</html>
