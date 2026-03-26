@@ -1,0 +1,273 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Parallel Conflict-Driven Clause Learning (CDCL) SAT Solver Proposal</title>
+  <style>
+    :root {
+      --bg: #f8fafc;
+      --card: #ffffff;
+      --text: #0f172a;
+      --muted: #334155;
+      --accent: #0369a1;
+      --border: #e2e8f0;
+    }
+    * { box-sizing: border-box; }
+    body {
+      margin: 0;
+      font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
+      line-height: 1.6;
+      color: var(--text);
+      background: var(--bg);
+    }
+    .container {
+      max-width: 980px;
+      margin: 2rem auto;
+      padding: 0 1rem 2rem;
+    }
+    .card {
+      background: var(--card);
+      border: 1px solid var(--border);
+      border-radius: 12px;
+      padding: 1.25rem 1.5rem;
+      margin-bottom: 1rem;
+    }
+    h1, h2, h3 { line-height: 1.25; }
+    h1 { margin-top: 0; font-size: 1.9rem; }
+    h2 {
+      margin: 0 0 0.75rem;
+      font-size: 1.2rem;
+      color: var(--accent);
+      text-transform: uppercase;
+      letter-spacing: 0.03em;
+    }
+    h3 {
+      margin: 1rem 0 0.35rem;
+      font-size: 1rem;
+      color: var(--text);
+    }
+    p { margin: 0.5rem 0; }
+    ul, ol { margin: 0.35rem 0 0.5rem 1.2rem; }
+    code {
+      background: #f1f5f9;
+      border: 1px solid #e2e8f0;
+      border-radius: 4px;
+      padding: 0.05rem 0.3rem;
+    }
+    pre {
+      background: #0f172a;
+      color: #e2e8f0;
+      border-radius: 8px;
+      padding: 0.9rem;
+      overflow-x: auto;
+      font-size: 0.88rem;
+    }
+    .meta {
+      color: var(--muted);
+      margin-top: 0.35rem;
+    }
+    a { color: var(--accent); }
+    .deadline {
+      background: #e0f2fe;
+      border: 1px solid #bae6fd;
+      border-radius: 8px;
+      padding: 0.75rem;
+      margin-top: 0.5rem;
+    }
+  </style>
+</head>
+<body>
+  <main class="container">
+    <section class="card">
+      <h1>Parallel Conflict-Driven Clause Learning (CDCL) SAT Solver</h1>
+      <p><strong>Team Members:</strong> Alan Joseph (alanjose), Om Arora (oarora)</p>
+      <p><strong>Course:</strong> 15-418 - Parallel Computer Architecture and Programming, Spring 2026</p>
+      <p><strong>Project URL:</strong> <a href="https://alanj268.github.io/parallel-SAT-CDCL">https://alanj268.github.io/parallel-SAT-CDCL</a></p>
+      <p class="meta">Project proposal page for the 15-418 final project.</p>
+    </section>
+
+    <section class="card">
+      <h2>Summary</h2>
+      <p>
+        We will build a high-performance parallel SAT solver by parallelizing key components of the Conflict-Driven Clause Learning (CDCL) algorithm: portfolio-style search and inter-worker learned clause sharing. The implementation targets multi-core CPUs on GHC lab machines using C++ and OpenMP, with additional scaling experiments on PSC/Bridges-2 if time permits. Our goal is to quantify how much parallel search plus selective clause exchange can improve throughput and time-to-solution over a strong sequential CDCL baseline.
+      </p>
+    </section>
+
+    <section class="card">
+      <h2>Background</h2>
+      <h3>Application Context</h3>
+      <p>
+        SAT asks whether a propositional formula in CNF has a satisfying truth assignment. Although SAT is NP-complete in the worst case, modern CDCL solvers are central to hardware/software verification, AI planning, and combinatorial optimization because they exploit structure in real-world instances.
+      </p>
+
+      <h3>CDCL Core Loop</h3>
+      <p>
+        CDCL alternates between decisions, Boolean Constraint Propagation (BCP), conflict analysis, clause learning, and non-chronological backjumping. BCP dominates runtime and uses watched literals to efficiently detect unit clauses. Conflict analysis generates high-value learned clauses (typically via a 1-UIP cut) that prune future search.
+      </p>
+
+      <pre><code>function CDCL(phi):
+  propagate()           // level-0 unit propagation
+  if conflict: return UNSAT
+  while not all variables assigned:
+    (x, v) <- decide()
+    while True:
+      conflict_clause <- propagate()
+      if no conflict: break
+      if decision_level == 0: return UNSAT
+      (learned, bt_level) <- analyze(conflict_clause)   // 1-UIP
+      add_clause(phi, learned)
+      backjump(bt_level)
+      assert(learned)
+  return SAT, assignment</code></pre>
+
+      <h3>Why Parallelism Helps</h3>
+      <p>
+        In a portfolio solver, multiple workers run independent CDCL searches with different random seeds and heuristic tie-breaking. Since workers encounter different conflicts, they learn different clauses; sharing high-quality clauses can prune each other's search spaces and reduce overall solve time.
+      </p>
+    </section>
+
+    <section class="card">
+      <h2>The Challenge</h2>
+      <h3>Workload Characteristics</h3>
+      <ul>
+        <li><strong>Dependencies:</strong> each worker has sequential dependencies within its own trail/implication graph, while workers are loosely coupled via clause sharing.</li>
+        <li><strong>Memory behavior:</strong> watched-literal propagation is pointer-heavy and irregular, often memory-bandwidth and cache-locality limited.</li>
+        <li><strong>Communication/computation trade-off:</strong> too much clause sharing increases synchronization and integration cost; too little loses pruning benefits.</li>
+        <li><strong>Divergence:</strong> workers progress at very different rates due to non-deterministic branching, restarts, and conflict patterns.</li>
+      </ul>
+
+      <h3>System Constraints and Learning Goals</h3>
+      <ul>
+        <li>Thread-safe clause integration without serializing the hot BCP path.</li>
+        <li>Designing robust quality filters (LBD, clause length, recency/activity) for shared clauses.</li>
+        <li>Balancing lock contention, queue overhead, and cache effects in shared-memory execution.</li>
+        <li>Ensuring correctness under concurrency despite asynchronous clause arrival and local solver state evolution.</li>
+      </ul>
+      <p>
+        We aim to learn how algorithmic SAT heuristics interact with low-level parallel systems concerns (synchronization granularity, memory locality, and thread scheduling), and what design choices drive real speedup on irregular search workloads.
+      </p>
+    </section>
+
+    <section class="card">
+      <h2>Resources</h2>
+      <ul>
+        <li><strong>Compute:</strong> GHC lab machines (8-core Intel shared-memory CPUs), and PSC/Bridges-2 for 16+ thread scaling studies.</li>
+        <li><strong>Code base:</strong> sequential CDCL baseline written from scratch in C++.</li>
+        <li><strong>Frameworks:</strong> OpenMP for threading; C++ atomics for concurrent queues and signaling.</li>
+        <li><strong>Benchmarks:</strong> SAT Competition CNF sets (random 3-SAT, industrial instances), plus SAT-encoded Sudoku cases.</li>
+        <li><strong>Tooling:</strong> Linux profiling tools (<code>perf</code>, <code>gprof</code>) for bottleneck analysis.</li>
+      </ul>
+
+      <h3>References</h3>
+      <ol>
+        <li>Eén, N. and Sörensson, N. (2003). "An Extensible SAT Solver." SAT 2003, LNCS 2919.</li>
+        <li>Audemard, G. and Simon, L. (2009). "Predicting Learnt Clauses Quality in Modern SAT Solvers." IJCAI 2009.</li>
+        <li>Hamadi, Y., Jabbour, S., and Sais, L. (2009). "ManySAT: a Parallel SAT Solver." JSAT, 6(4).</li>
+      </ol>
+    </section>
+
+    <section class="card">
+      <h2>Goals and Deliverables</h2>
+      <h3>Plan to Achieve (Core Success Criteria)</h3>
+      <ol>
+        <li>Correct sequential CDCL solver with watched literals, 1-UIP analysis, VSIDS, clause deletion, and restart policy.</li>
+        <li>OpenMP portfolio solver with <code>p</code> workers and robust SAT/UNSAT termination protocol.</li>
+        <li>Thread-safe clause-sharing channel and worker-side import/export integration.</li>
+        <li>Quality filtering (initially LBD threshold <code>l</code>, tuned experimentally).</li>
+        <li>Performance evaluation at 1/2/4/8 threads on GHC, targeting roughly 4x–6x speedup on hard instances versus sequential baseline.</li>
+        <li>Correctness validation: SAT solutions checked by independent verifier; UNSAT cross-checked against sequential baseline.</li>
+      </ol>
+
+      <h3>Hope to Achieve (Stretch)</h3>
+      <ol>
+        <li>Scaling studies on PSC/Bridges-2 (16/32/64 threads).</li>
+        <li>Adaptive sharing throttle based on worker conflict rate and queue pressure.</li>
+        <li>Comparative study of clause filtering strategies (LBD vs. length vs. activity).</li>
+        <li>Optional UNSAT certificate generation if core milestones are complete early.</li>
+      </ol>
+
+      <h3>Fallback Goals (If Progress Is Slower)</h3>
+      <p>
+        If full shared-clause integration becomes unstable or too costly within the timeline, we will deliver a correct no-sharing parallel portfolio solver plus a rigorous analysis of where speedup is gained and where it is lost.
+      </p>
+
+      <h3>Deliverables</h3>
+      <ul>
+        <li>Code repository with sequential and parallel implementations.</li>
+        <li>Milestone report with preliminary correctness and speedup data.</li>
+        <li>Final report with methods, experiments, and analysis.</li>
+        <li>Poster and live demo including speedup and sensitivity plots.</li>
+      </ul>
+    </section>
+
+    <section class="card">
+      <h2>Platform Choice</h2>
+      <p>
+        Multi-core CPUs with OpenMP are a strong fit for CDCL portfolio solving because workers can share learned clauses through low-latency shared memory rather than message serialization. This model mirrors successful industrial parallel SAT designs and allows rapid iteration on synchronization policies and memory layout. It also maps naturally from 8-core GHC hosts to higher-core-count PSC nodes for scalability analysis.
+      </p>
+    </section>
+
+    <section class="card">
+      <h2>Schedule</h2>
+      <div class="deadline">
+        <strong>Key Deadlines:</strong>
+        <ul>
+          <li>Milestone Report Due: Tuesday, April 14th, 11:59pm</li>
+          <li>Final Report Due: Thursday, April 30th, 11:59pm</li>
+          <li>Poster Session (15-418 groups): Friday, May 1st, 8:30–11:30am</li>
+        </ul>
+      </div>
+
+      <h3>Week 1 (Mar 25 – Mar 31): Sequential Core Infrastructure</h3>
+      <ul>
+        <li><strong>Both:</strong> repository setup, build/test conventions, benchmark harness skeleton.</li>
+        <li><strong>Om:</strong> DIMACS parser + clause/literal representation + watched-literal storage layout.</li>
+        <li><strong>Alan:</strong> BCP kernel + assignment trail + initial decision routine.</li>
+        <li><strong>Both:</strong> unit tests on handcrafted SAT/UNSAT inputs; debug trail consistency.</li>
+      </ul>
+
+      <h3>Week 2 (Apr 1 – Apr 7): Complete Sequential CDCL</h3>
+      <ul>
+        <li><strong>Om:</strong> 1-UIP conflict analysis + non-chronological backjumping.</li>
+        <li><strong>Alan:</strong> VSIDS heap + Luby restarts + integration into search loop.</li>
+        <li><strong>Om:</strong> learned-clause management and periodic deletion.</li>
+        <li><strong>Both:</strong> full benchmark correctness run and baseline performance capture.</li>
+      </ul>
+
+      <h3>Week 3 (Apr 8 – Apr 14): Parallel Framework + Milestone</h3>
+      <ul>
+        <li><strong>Om:</strong> encapsulate per-thread state in <code>SolverWorker</code>.</li>
+        <li><strong>Alan:</strong> OpenMP worker launch, randomization policy, SAT/UNSAT global termination.</li>
+        <li><strong>Om:</strong> lock-free/shared queue for learned clauses + export path.</li>
+        <li><strong>Alan:</strong> import path at restart boundaries with safe watcher initialization.</li>
+        <li><strong>Both:</strong> milestone writeup (correctness status, 1/2/4/8 thread preliminary scaling, updated risk plan).</li>
+      </ul>
+
+      <h3>Week 4 (Apr 15 – Apr 21): Optimization and Profiling</h3>
+      <ul>
+        <li><strong>Both:</strong> tune clause-sharing threshold <code>l</code> and export frequency on multiple benchmark families.</li>
+        <li><strong>Alan:</strong> implement export-budget cap per restart and back-pressure handling.</li>
+        <li><strong>Om:</strong> profile runtime breakdown (BCP, analysis, sharing overhead) and identify cache/sync bottlenecks.</li>
+        <li><strong>Both:</strong> iterate on data structure/layout improvements.</li>
+      </ul>
+
+      <h3>Week 5 (Apr 22 – Apr 28): Full Evaluation + Poster Draft</h3>
+      <ul>
+        <li><strong>Both:</strong> complete GHC experiments at 1/2/4/8 threads across benchmark sets.</li>
+        <li><strong>Alan:</strong> run no-sharing vs. sharing ablation and quantify portfolio effect.</li>
+        <li><strong>Om:</strong> generate plots (speedup, time breakdown, sensitivity to <code>l</code>/deletion rate).</li>
+        <li><strong>Both:</strong> verify SAT assignments and UNSAT outcomes; draft poster and report figures/tables.</li>
+      </ul>
+
+      <h3>Week 6 (Apr 29 – May 1): Finalization and Submission</h3>
+      <ul>
+        <li><strong>Both:</strong> finalize report text and publish links/artifacts on project page.</li>
+        <li><strong>Om:</strong> submit final report PDF.</li>
+        <li><strong>Alan:</strong> submit source code package.</li>
+        <li><strong>Both:</strong> finalize/print poster and rehearse demo for May 1 session.</li>
+      </ul>
+    </section>
+  </main>
+</body>
+</html>
