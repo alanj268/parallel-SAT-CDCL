@@ -1,0 +1,157 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>15-418 CDCL SAT Solver – Milestone Report</title>
+  <style>
+    :root {
+      --bg: #f8fafc;
+      --card: #ffffff;
+      --text: #0f172a;
+      --muted: #334155;
+      --accent: #0369a1;
+      --border: #e2e8f0;
+    }
+    * { box-sizing: border-box; }
+    body {
+      margin: 0;
+      font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
+      line-height: 1.6;
+      color: var(--text);
+      background: var(--bg);
+    }
+    .container {
+      max-width: 980px;
+      margin: 2rem auto;
+      padding: 0 1rem 2rem;
+    }
+    .card {
+      background: var(--card);
+      border: 1px solid var(--border);
+      border-radius: 12px;
+      padding: 1.25rem 1.5rem;
+      margin-bottom: 1rem;
+    }
+    h1, h2, h3 { line-height: 1.25; }
+    h1 { margin-top: 0; font-size: 1.9rem; }
+    h2 {
+      margin: 0 0 0.75rem;
+      font-size: 1.2rem;
+      color: var(--accent);
+      text-transform: uppercase;
+      letter-spacing: 0.03em;
+    }
+    h3 {
+      margin: 1rem 0 0.35rem;
+      font-size: 1rem;
+      color: var(--text);
+    }
+    p { margin: 0.5rem 0; }
+    ul, ol { margin: 0.35rem 0 0.5rem 1.2rem; }
+    code {
+      background: #f1f5f9;
+      border: 1px solid #e2e8f0;
+      border-radius: 4px;
+      padding: 0.05rem 0.3rem;
+    }
+    pre {
+      background: #f8fafc;
+      color: #1f2937;
+      border: 1px solid #e2e8f0;
+      border-radius: 8px;
+      padding: 0.9rem;
+      overflow-x: auto;
+      font-size: 0.88rem;
+    }
+    pre code {
+      background: transparent;
+      border: 0;
+      padding: 0;
+      color: inherit;
+    }
+    .meta {
+      color: var(--muted);
+      margin-top: 0.35rem;
+    }
+    a { color: var(--accent); }
+    .deadline {
+      background: #e0f2fe;
+      border: 1px solid #bae6fd;
+      border-radius: 8px;
+      padding: 0.75rem;
+      margin-top: 0.5rem;
+    }
+    .nav-link {
+      display: inline-block;
+      margin-bottom: 1rem;
+      padding: 0.5rem 1rem;
+      background: var(--accent);
+      color: #ffffff;
+      border-radius: 6px;
+      text-decoration: none;
+      font-size: 0.9rem;
+    }
+    .nav-link:hover {
+      opacity: 0.9;
+    }
+    em { font-style: italic; }
+  </style>
+</head>
+<body>
+  <main class="container">
+    <a href="index.html" class="nav-link">← Back to Proposal</a>
+
+    <section class="card">
+      <h1>Milestone Report</h1>
+      <p><strong>Team Members:</strong> Alan Joseph (alanjose), Om Arora (oarora)</p>
+      <p><strong>Course:</strong> 15-418 - Parallel Computer Architecture and Programming, Spring 2026</p>
+      <p class="meta">Milestone Report – April 14, 2026</p>
+    </section>
+
+    <section class="card">
+      <h2>Work Done So Far</h2>
+      <p>
+        We are a little behind on planned schedule. So far, we have a working version of the CDCL SAT solver. We implemented it from scratch, using the Extensible SAT solver paper<sup>[1]</sup>. The solver supports input SAT instances in DIMACS format, and uses the two-literal watching data structure with BCP. It then uses 1-UIP conflict analysis to produce learnt clauses, and adds it to a list of learnt clauses that are used to avoid future conflicts. A few optimizations remain to be performed, namely, using VSIDS variable heap activity when deciding which literal to assign next, implementing some form of clause deletion to evict low-quality learnt clauses, and Luby restart sequence policy to escape from certain branches of the solution space.
+      </p>
+      <p style="margin-top: 1rem; padding-top: 1rem; border-top: 1px solid var(--border); font-size: 0.9rem;">
+        <sup>[1]</sup> Eén, N. and Sörensson, N. (2003). "An Extensible SAT Solver." <em>SAT 2003</em>, LNCS 2919.
+      </p>
+    </section>
+
+    <section class="card">
+      <h2>Goals and Deliverables</h2>
+      <p>
+        We still plan to hit all our "Plan to Achieve" goals by the project deadline, even though we are a little behind. We will deliver a correct, working, parallel portfolio based CDCL SAT solver with clause sharing data structures using OpenMP, optimized for performance on the GHC machines. From our "Hope to Achieve" goals, we hope to test and optimize for scalability on the PSC Bridges-2 cluster. If time permits, we can also empirically analyze further clause sharing strategies (such as LBD-based filtering vs clause length vs activity-based filtering). It seems that we will not be able to attempt the adaptive clause sharing throttle and clause freezing strategies that we proposed originally, and we will most likely not focus on generating UNSAT certificates.
+      </p>
+
+      <h3>Goals for the Poster Session</h3>
+      <p><em>Note: "Hope to Achieve" goals are marked with an asterisk (*).</em></p>
+      <ol>
+        <li>Correct Sequential CDCL baseline <em>(already completed)</em></li>
+        <li>Multi-threaded portfolio solver <em>(15th – 18th April, Om)</em></li>
+        <li>Basic clause sharing protocol <em>(19th – 22nd April, Alan)</em></li>
+        <li>Quality filter <em>(23rd – 25th April, Om)</em></li>
+        <li>Correctness validation & performance evaluation <em>(26th – 30th April, Alan)</em></li>
+        <li>(*) Performance evaluation and optimization on PSC Bridges-2</li>
+        <li>(*) Empirically analyze different clause sharing strategies</li>
+      </ol>
+
+      <h3>Demo Plan</h3>
+      <p>
+        We plan to show speedup graphs comparing our parallel SAT solver with our sequential one and comparing their performances on the GHC machines and the PSC machines (if time permits). We will also have graphs that show the sensitivity of the speedups on various factors of the solver, such as clause deletion rate, <em>l</em>, etc. We can also present an interactive demo of SAT solvers with some instances of problems.
+      </p>
+    </section>
+
+    <section class="card">
+      <h2>Remaining Issues</h2>
+      <p>
+        Since we are behind schedule, we are concerned about the timeline. We need to implement a few of the optimizations for the sequential solver (namely, the VSIDS variable heap activity, clause deletion, and restarts), and then build the parallel solver. Moreover, the clause sharing requires making a multi-producer multi-consumer queue for sharing the learned clauses with all other threads.
+      </p>
+      <p>
+        However, over the course of building the SAT solver, we have overcome a steep learning curve and gained better intuition about its internal workings, so we believe that the optimizations and parallelization will be much faster. As such, we think we can deliver all the adjusted goals listed above.
+      </p>
+    </section>
+  </main>
+</body>
+</html>
